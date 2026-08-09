@@ -174,8 +174,11 @@
   .detail-title{font-size:12px;font-weight:bold;margin-bottom:6px;}
   .time-row{display:flex;gap:8px;align-items:center;}
   .time-row input{flex:1;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px;font-size:16px;}
-  .train-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+  .train-grid{display:flex;flex-direction:column;gap:10px;}
   .train-grid input{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;font-size:16px;}
+  .train-slot{border:1px solid var(--line);border-radius:10px;padding:8px;background:#fdfcf9;}
+  .train-attr-row{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;}
+  .attr-chip{font-size:11px;padding:5px 9px;border-radius:7px;}
   .stay-select{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:16px;background:#fff;color:var(--ink);}
   .nextday-toggle{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#8a8378;}
 
@@ -336,6 +339,16 @@
       <button onclick="addConfigItem('stays','cfgStaysNew')">追加</button>
     </div>
 
+    <div class="section-label">列車番号の属性(番号の前に付く)</div>
+    <div id="cfgTrainAttrsList"></div>
+    <div class="cfg-add-row">
+      <input id="cfgTrainAttrsNew" placeholder="例: 試運転">
+      <button onclick="addConfigItem('trainAttrs','cfgTrainAttrsNew')">追加</button>
+    </div>
+
+    <div class="section-label">列車番号の末尾に付ける文字</div>
+    <input id="cfgTrainSuffix" class="cfg-add-row" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:16px;margin-bottom:16px;" placeholder="例: A">
+
     <button class="close-btn" onclick="saveConfigAndClose()">保存して閉じる</button>
   </div>
 </div>
@@ -367,12 +380,33 @@ let appConfig = {
   workShifts: [...Array(15)].map((_,i)=>String(601+i)).concat(["671","672","G予備"]),
   restShifts: ["特休","公休","年休"],
   kids: ["旅行","帰省","マリンバ","サッカー","ママ友会","図書館"],
-  stays: ["博総","博多","小倉","新下関","広島","広運","岡山","岡運","姫路","西明石","新大阪","大一両"]
+  stays: ["博総","博多","小倉","新下関","広島","広運","岡山","岡運","姫路","西明石","新大阪","大一両"],
+  trainAttrs: ["回送","便乗","線見"],
+  trainSuffix: "A"
 };
 // 「日勤」「臨行路」は仕組み上の特殊カテゴリとして常に末尾に付与
 function getAllWorkShifts(){ return appConfig.workShifts.concat(["日勤","臨行路"]); }
 
-let shiftMaster = {}; // { "601": {start, end, trains:[], stay:"", noNextDay:false} , ... }
+let shiftMaster = {}; // { "601": {start, end, trains:[{attr,num}], stay:"", noNextDay:false} , ... }
+
+/* 旧データ(単なる文字列 "7139A")を属性つきオブジェクトに変換 */
+function normalizeTrainEntry(entry){
+  if(entry && typeof entry === "object") return {attr: entry.attr||"", num: entry.num||""};
+  let s = String(entry||"");
+  const suf = appConfig.trainSuffix || "";
+  if(suf && s.toLowerCase().endsWith(suf.toLowerCase())){
+    s = s.slice(0, s.length - suf.length);
+  }
+  return {attr:"", num:s};
+}
+function migrateShiftMasterTrains(){
+  Object.keys(shiftMaster).forEach(k=>{
+    const t = shiftMaster[k];
+    if(t && Array.isArray(t.trains)){
+      t.trains = t.trains.map(normalizeTrainEntry);
+    }
+  });
+}
 function ensureShiftMasterDefaults(){
   appConfig.workShifts.forEach(s=>{
     if(!shiftMaster[s]) shiftMaster[s] = {start:"08:57", end:"10:09", trains:[], stay:"", noNextDay:false};
@@ -499,6 +533,8 @@ function loadConfigAndMaster(){
       appConfig.restShifts = d.restShifts || appConfig.restShifts;
       appConfig.kids = d.kids || appConfig.kids;
       appConfig.stays = d.stays || appConfig.stays;
+      appConfig.trainAttrs = d.trainAttrs || appConfig.trainAttrs;
+      appConfig.trainSuffix = (d.trainSuffix !== undefined) ? d.trainSuffix : appConfig.trainSuffix;
     }
     ensureShiftMasterDefaults();
   }).catch(err=>{ showFatalError("カテゴリ設定取得失敗: " + err.message); });
@@ -506,6 +542,7 @@ function loadConfigAndMaster(){
   roomRef().doc("_shift_master").get().then(doc=>{
     if(doc.exists) shiftMaster = Object.assign(shiftMaster, doc.data());
     ensureShiftMasterDefaults();
+    migrateShiftMasterTrains();
     renderGrid();
   }).catch(err=>{ showFatalError("シフトマスタ取得失敗: " + err.message); });
 }
@@ -668,7 +705,14 @@ function renderPapaDetails(info){
 
   const m = shiftMaster[info.papaType] || {};
   const parts = [];
-  if(m.trains && m.trains.length) parts.push(`列車: ${m.trains.join("・")}`);
+  if(m.trains && m.trains.length){
+    const suf = appConfig.trainSuffix || "";
+    const display = m.trains.map(t=>{
+      const n = normalizeTrainEntry(t);
+      return `${n.attr||""}${n.num}${suf}`;
+    }).join("・");
+    parts.push(`列車: ${display}`);
+  }
   parts.push(`泊まり地: ${m.stay || "未設定"}`);
   document.getElementById("papaDetailText").textContent = parts.join("\n");
 }
@@ -748,11 +792,17 @@ function openMaster(){
       <div class="detail-title" style="margin-top:10px;">担当列車（最大10本）</div>
       <div class="train-grid">
         ${Array.from({length:10}, (_,i)=>{
-          const v = (t.trains && t.trains[i]) || "";
-          return `<input type="text" inputmode="numeric" maxlength="12" data-code="${s}" data-train-index="${i}" placeholder="${i+1}. 列車番号" value="${v}">`;
+          const raw = normalizeTrainEntry((t.trains && t.trains[i]) || "");
+          const attrChips = [`<div class="chip attr-chip ${!raw.attr?'active':''}" data-attr="" onclick="selectTrainAttr(this)">なし</div>`]
+            .concat(appConfig.trainAttrs.map(a=>`<div class="chip attr-chip ${raw.attr===a?'active':''}" data-attr="${a}" onclick="selectTrainAttr(this)">${a}</div>`))
+            .join("");
+          return `<div class="train-slot" data-code="${s}" data-train-index="${i}">
+            <div class="train-attr-row">${attrChips}</div>
+            <input type="text" inputmode="numeric" maxlength="12" class="train-num-input" data-code="${s}" data-train-index="${i}" placeholder="${i+1}. 列車番号" value="${raw.num}">
+          </div>`;
         }).join("")}
       </div>
-      <div class="mini">数字だけ入力すると自動で「A」を付けて保存します。例：7139 → 7139A</div>
+      <div class="mini">属性ボタンを選ぶと番号の前に付きます（任意）。末尾には自動で「${appConfig.trainSuffix}」が付きます。例：回送 + 7139 → 回送7139${appConfig.trainSuffix}。属性・末尾の文字は「カテゴリ設定」で変更できます。</div>
       <div class="detail-title" style="margin-top:10px;">泊まり地</div>
       <select id="m_${s}_stay" class="stay-select" data-code="${s}" onchange="handleStaySelectChange(this)">
         <option value="" ${!t.stay?'selected':''}>なし</option>
@@ -777,6 +827,12 @@ function openMaster(){
   document.getElementById("masterSheet").classList.add("open");
   lockBodyScroll();
 }
+function selectTrainAttr(chipEl){
+  const row = chipEl.parentElement;
+  row.querySelectorAll(".attr-chip").forEach(c=>c.classList.remove("active"));
+  chipEl.classList.add("active");
+}
+
 function handleStaySelectChange(selectEl){
   if(selectEl.value !== "__NEW__") return;
   const name = prompt("新しい泊まり地の名前を入力してください");
@@ -805,10 +861,18 @@ function saveMasterAndClose(){
       end: document.getElementById(`m_${s}_e`).value
     };
     if(s !== "日勤"){
-      const trainInputs = document.querySelectorAll(`.train-grid input[data-code="${s}"]`);
-      const trains = Array.from(trainInputs).map(el=>{
-        const raw = el.value.trim().replace(/A$/i, "");
-        return raw ? raw + "A" : "";
+      const trainSlots = document.querySelectorAll(`.train-slot[data-code="${s}"]`);
+      const suf = appConfig.trainSuffix || "";
+      const trains = Array.from(trainSlots).map(slot=>{
+        const numInput = slot.querySelector(".train-num-input");
+        let num = numInput.value.trim();
+        if(suf && num.toLowerCase().endsWith(suf.toLowerCase())){
+          num = num.slice(0, num.length - suf.length);
+        }
+        if(!num) return null;
+        const activeChip = slot.querySelector(".attr-chip.active");
+        const attr = (activeChip && activeChip.getAttribute("data-attr")) || "";
+        return {attr, num};
       }).filter(Boolean).slice(0,10);
       const stayEl = document.getElementById(`m_${s}_stay`);
       entry.trains = trains;
@@ -835,6 +899,8 @@ function renderConfigLists(){
   renderConfigList("restShifts","cfgRestList");
   renderConfigList("kids","cfgKidsList");
   renderConfigList("stays","cfgStaysList");
+  renderConfigList("trainAttrs","cfgTrainAttrsList");
+  document.getElementById("cfgTrainSuffix").value = appConfig.trainSuffix || "";
 }
 function renderConfigList(field, elId){
   const el = document.getElementById(elId);
@@ -856,6 +922,7 @@ function removeConfigItem(field, value){
   renderConfigLists();
 }
 function saveConfigAndClose(){
+  appConfig.trainSuffix = document.getElementById("cfgTrainSuffix").value.trim();
   saveConfig();
   document.getElementById("configSheet").classList.remove("open");
   unlockBodyScroll();
