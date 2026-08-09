@@ -753,9 +753,10 @@ function openMaster(){
       </div>
       <div class="mini">数字だけ入力すると自動で「A」を付けて保存します。例：7139 → 7139A</div>
       <div class="detail-title" style="margin-top:10px;">泊まり地</div>
-      <select id="m_${s}_stay" class="stay-select">
+      <select id="m_${s}_stay" class="stay-select" data-code="${s}" onchange="handleStaySelectChange(this)">
         <option value="" ${!t.stay?'selected':''}>なし</option>
         ${appConfig.stays.map(x=>`<option value="${x}" ${t.stay===x?'selected':''}>${x}</option>`).join("")}
+        <option value="__NEW__">＋ 新しい泊まり地を追加</option>
       </select>
       <label class="nextday-toggle">
         <input type="checkbox" id="m_${s}_nn" ${t.noNextDay?'checked':''}>
@@ -775,6 +776,26 @@ function openMaster(){
   document.getElementById("masterSheet").classList.add("open");
   lockBodyScroll();
 }
+function handleStaySelectChange(selectEl){
+  if(selectEl.value !== "__NEW__") return;
+  const name = prompt("新しい泊まり地の名前を入力してください");
+  if(!name || !name.trim()){
+    selectEl.value = ""; // キャンセル時は「なし」に戻す
+    return;
+  }
+  const v = name.trim();
+  if(!appConfig.stays.includes(v)){
+    appConfig.stays.push(v);
+    saveConfig(); // 以後どのシフトからも選べるように即保存
+  }
+  // 追加した項目を選択肢に反映してから選択状態にする
+  const opt = document.createElement("option");
+  opt.value = v;
+  opt.textContent = v;
+  selectEl.insertBefore(opt, selectEl.lastElementChild); // 「＋新規追加」の直前に挿入
+  selectEl.value = v;
+}
+
 function saveMasterAndClose(){
   const codes = appConfig.workShifts.concat(["日勤"]);
   codes.forEach(s=>{
