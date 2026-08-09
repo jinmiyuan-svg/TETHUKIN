@@ -308,7 +308,10 @@
 <!-- カテゴリ設定シート -->
 <div class="sheet-overlay" id="configSheet">
   <div class="sheet">
-    <h2>カテゴリ設定</h2>
+    <h2 style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <span>カテゴリ設定</span>
+      <button onclick="saveConfigAndClose()" style="flex-shrink:0;border:none;background:var(--accent);color:#fff;font-size:12px;padding:7px 12px;border-radius:8px;">保存して閉じる</button>
+    </h2>
     <div class="mini">行路コード・休みの種類・行事/習い事・泊まり地を自由に追加/削除できます。「日勤」「臨行路」は仕組み上固定です。</div>
 
     <div class="section-label">行路・勤務コード</div>
@@ -377,10 +380,10 @@ let roomCode = null;
 
 /* ===== カテゴリ設定(カスタマイズ可能。デフォルト値) ===== */
 let appConfig = {
-  workShifts: [...Array(15)].map((_,i)=>String(601+i)).concat(["671","672","G予備"]),
+  workShifts: [],
   restShifts: ["特休","公休","年休"],
   kids: ["旅行","帰省","マリンバ","サッカー","ママ友会","図書館"],
-  stays: ["博総","博多","小倉","新下関","広島","広運","岡山","岡運","姫路","西明石","新大阪","大一両"],
+  stays: [],
   trainAttrs: ["回送","便乗","線見"],
   trainSuffix: "A"
 };
