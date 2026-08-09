@@ -88,9 +88,10 @@
     padding:4px 6px;cursor:pointer;
   }
   .shiftcheck-btn, .cfg-btn{
-    font-size:11px;border:1px solid var(--line);background:#fff;
-    padding:6px 8px;border-radius:20px;color:var(--ink);cursor:pointer;
+    font-size:12px;border:1px solid var(--line);background:#fff;
+    padding:8px 6px;border-radius:10px;color:var(--ink);cursor:pointer;flex:1;
   }
+  .settings-row{display:flex;gap:8px;padding:0 16px 10px;}
   .roomcode-row{
     text-align:center;font-size:11px;color:var(--papa);cursor:pointer;
     padding:0 16px 8px;text-decoration:underline;
@@ -175,9 +176,7 @@
   .time-row input{flex:1;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px;font-size:16px;}
   .train-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
   .train-grid input{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;font-size:16px;}
-  .stay-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
-  .stay-chip{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 2px;text-align:center;font-size:11px;cursor:pointer;}
-  .stay-chip.active{background:var(--papa);color:#fff;border-color:var(--papa);}
+  .stay-select{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:16px;background:#fff;color:var(--ink);}
   .nextday-toggle{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#8a8378;}
 
   .cfg-item{
@@ -224,11 +223,13 @@
   <div class="nav">
     <button onclick="changeMonth(-1)">‹</button>
     <button onclick="changeMonth(1)">›</button>
-    <button class="cfg-btn" onclick="openConfigScreen()">カテゴリ設定</button>
-    <button class="shiftcheck-btn" onclick="openMaster()">シフト確認</button>
   </div>
 </header>
 <div class="roomcode-row" onclick="showRoomCode()">合言葉を表示</div>
+<div class="settings-row">
+  <button class="cfg-btn" onclick="openConfigScreen()">カテゴリ設定</button>
+  <button class="shiftcheck-btn" onclick="openMaster()">シフト詳細</button>
+</div>
 
 <div class="weekdays">
   <div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div>
@@ -752,10 +753,10 @@ function openMaster(){
       </div>
       <div class="mini">数字だけ入力すると自動で「A」を付けて保存します。例：7139 → 7139A</div>
       <div class="detail-title" style="margin-top:10px;">泊まり地</div>
-      <div class="stay-grid" data-stay-group="${s}">
-        ${appConfig.stays.map(x=>`<div class="stay-chip ${t.stay===x?'active':''}" data-stay="${x}">${x}</div>`).join("")}
-        <div class="stay-chip ${!t.stay?'active':''}" data-stay="">なし</div>
-      </div>
+      <select id="m_${s}_stay" class="stay-select">
+        <option value="" ${!t.stay?'selected':''}>なし</option>
+        ${appConfig.stays.map(x=>`<option value="${x}" ${t.stay===x?'selected':''}>${x}</option>`).join("")}
+      </select>
       <label class="nextday-toggle">
         <input type="checkbox" id="m_${s}_nn" ${t.noNextDay?'checked':''}>
         翌日に「〜」を表示しない(日勤扱いの勤務)
@@ -770,14 +771,6 @@ function openMaster(){
       ${trainsHtml}
     </div>`;
   }).join("");
-
-  list.querySelectorAll(".stay-chip").forEach(chip=>{
-    chip.addEventListener("click", ()=>{
-      const group = chip.closest(".stay-grid");
-      group.querySelectorAll(".stay-chip").forEach(c=>c.classList.remove("active"));
-      chip.classList.add("active");
-    });
-  });
 
   document.getElementById("masterSheet").classList.add("open");
   lockBodyScroll();
@@ -795,9 +788,9 @@ function saveMasterAndClose(){
         const raw = el.value.trim().replace(/A$/i, "");
         return raw ? raw + "A" : "";
       }).filter(Boolean).slice(0,10);
-      const activeChip = document.querySelector(`.stay-grid[data-stay-group="${s}"] .stay-chip.active`);
+      const stayEl = document.getElementById(`m_${s}_stay`);
       entry.trains = trains;
-      entry.stay = activeChip ? activeChip.getAttribute("data-stay") : "";
+      entry.stay = stayEl ? stayEl.value : "";
       const nnEl = document.getElementById(`m_${s}_nn`);
       entry.noNextDay = nnEl ? nnEl.checked : false;
     }
