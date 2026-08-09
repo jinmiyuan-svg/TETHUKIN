@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>鉄勤</title>
+<script>
+  /* ===== エラー表示オーバーレイ(デバッグ用) ===== */
+  (function(){
+    var box;
+    function ensureBox(){
+      if(box) return box;
+      box = document.createElement('div');
+      box.id = 'errBox';
+      box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;'
+        + 'background:#c0392b;color:#fff;font-size:12px;line-height:1.5;'
+        + 'padding:10px 12px;max-height:60vh;overflow-y:auto;'
+        + 'font-family:monospace;white-space:pre-wrap;word-break:break-all;';
+      document.documentElement.appendChild(box);
+      return box;
+    }
+    function showError(label, detail){
+      var attach = function(){
+        var b = ensureBox();
+        var line = document.createElement('div');
+        line.style.marginBottom = '6px';
+        line.style.borderBottom = '1px solid rgba(255,255,255,.3)';
+        line.style.paddingBottom = '6px';
+        line.textContent = '[' + label + '] ' + detail;
+        b.appendChild(line);
+      };
+      if(document.body) attach();
+      else document.addEventListener('DOMContentLoaded', attach);
+    }
+    window.addEventListener('error', function(e){
+      if(e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')){
+        showError('読み込み失敗', (e.target.src || e.target.href || '不明なリソース'));
+      } else {
+        showError('JSエラー', (e.message || '不明なエラー') + ' @ ' + (e.filename||'') + ':' + (e.lineno||'') + ':' + (e.colno||''));
+      }
+    }, true);
+    window.addEventListener('unhandledrejection', function(e){
+      var reason = e.reason;
+      var msg = (reason && (reason.message || reason.code)) ? (reason.message || reason.code) : String(reason);
+      showError('非同期エラー(Promise)', msg);
+    });
+  })();
+</script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --ink:#2b2b28;
+    --paper:#faf7f0;
+    --line:#e2ddd1;
+    --papa:#3d6b8a;
+    --papa-bg:#e7eff4;
+    --mama:#b5563f;
+    --mama-bg:#f6e9e5;
+    --rest:#c99a3d;
+    --rest-bg:#f8f0dd;
+    --kid:#5c7a5a;
+    --kid-bg:#eaf1e8;
+    --accent:#b5563f;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Hiragino Sans","Yu Gothic",sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    -webkit-tap-highlight-color:transparent;
+  }
+  header{
+    padding:14px 16px 4px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  header h1{
+    font-size:17px;
+    margin:0;
+    letter-spacing:.05em;
+  }
+  .nav{display:flex;align-items:center;gap:8px;}
+  .nav button{
+    border:none;background:none;font-size:18px;color:var(--ink);
+    padding:4px 6px;cursor:pointer;
+  }
+  .shiftcheck-btn, .cfg-btn{
+    font-size:11px;border:1px solid var(--line);background:#fff;
+    padding:6px 8px;border-radius:20px;color:var(--ink);cursor:pointer;
+  }
+  .roomcode-row{
+    text-align:center;font-size:11px;color:var(--papa);cursor:pointer;
+    padding:0 16px 8px;text-decoration:underline;
+  }
+  .weekdays{
+    display:grid;grid-template-columns:repeat(7,1fr);
+    text-align:center;font-size:11px;color:#8a8378;
+    padding:2px 6px;
+  }
+  .weekdays div:first-child{color:var(--mama);}
+  .weekdays div:last-child{color:var(--papa);}
+  .grid{
+    display:grid;grid-template-columns:repeat(7,1fr);
+    gap:5px;padding:6px;
+  }
+  .cell{
+    background:#fff;border:1px solid var(--line);border-radius:10px;
+    min-height:78px;padding:5px 4px;display:flex;flex-direction:column;
+    cursor:pointer;position:relative;
+  }
+  .cell.empty{background:transparent;border:none;}
+  .cell.today{border:2px solid var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+  .cell.today .datenum{color:var(--accent);font-weight:bold;}
+  .notedots{position:absolute;top:4px;right:4px;display:flex;gap:2px;}
+  .dot{width:6px;height:6px;border-radius:50%;}
+  .dot-mama{background:var(--mama);}
+  .dot-papa{background:var(--papa);}
+  .cell .datenum{font-size:11px;color:#a49c8d;}
+  .cell .tag{
+    font-size:10px;border-radius:5px;padding:1px 4px;margin-top:2px;
+    display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .tag.papa{background:var(--papa-bg);color:var(--papa);}
+  .tag.rest{background:var(--rest-bg);color:var(--rest);}
+  .tag.mama{background:var(--mama-bg);color:var(--mama);}
+  .tag.kid{background:var(--kid-bg);color:var(--kid);font-size:9px;}
+  .kidwrap{display:flex;flex-wrap:wrap;gap:2px;margin-top:auto;}
+
+  .sheet-overlay{
+    position:fixed;inset:0;background:rgba(30,26,20,.4);
+    display:none;align-items:flex-end;justify-content:center;z-index:50;
+  }
+  .sheet-overlay.open{display:flex;}
+  .sheet-overlay.center{align-items:center;}
+  .sheet{
+    background:var(--paper);width:100%;max-width:480px;border-radius:18px 18px 0 0;
+    padding:16px 16px 26px;max-height:82vh;max-height:82dvh;overflow-y:auto;
+  }
+  .sheet.rounded{border-radius:18px;}
+  .sheet h2{
+    font-size:15px;margin:0 0 10px;
+    position:sticky;top:0;z-index:5;
+    background:var(--paper);
+    padding:6px 0 8px;
+    border-bottom:1px solid var(--line);
+  }
+  .section-label{font-size:11px;color:#8a8378;margin:14px 0 6px;}
+  .btnrow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}
+  .chip{
+    border:1px solid var(--line);background:#fff;border-radius:8px;
+    padding:8px 2px;font-size:12px;text-align:center;cursor:pointer;color:var(--ink);
+  }
+  .chip.active{background:var(--papa);color:#fff;border-color:var(--papa);}
+  .chip.rest-chip{}
+  .chip.rest-chip.active{background:var(--rest);color:#fff;border-color:var(--rest);}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;}
+  .switch{width:44px;height:24px;border-radius:12px;background:#ddd6c7;position:relative;cursor:pointer;transition:.2s;}
+  .switch.on{background:var(--mama);}
+  .switch .knob{width:18px;height:18px;background:#fff;border-radius:50%;position:absolute;top:3px;left:3px;transition:.2s;}
+  .switch.on .knob{left:23px;}
+  .kidgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+  .kidchip{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 2px;text-align:center;font-size:12px;cursor:pointer;}
+  .kidchip.active{background:var(--kid-bg);border-color:var(--kid);color:var(--kid);}
+  .close-btn{width:100%;margin-top:16px;padding:10px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;}
+  .mini{font-size:11px;color:#8a8378;margin-top:8px;}
+  .rinko-inputs{display:flex;gap:8px;margin-top:8px;}
+  .rinko-inputs input, .rinko-inputs select{flex:1;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:16px;}
+
+  .detail-box{margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;}
+  .detail-title{font-size:12px;font-weight:bold;margin-bottom:6px;}
+  .time-row{display:flex;gap:8px;align-items:center;}
+  .time-row input{flex:1;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px;font-size:16px;}
+  .train-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+  .train-grid input{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;font-size:16px;}
+  .stay-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+  .stay-chip{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 2px;text-align:center;font-size:11px;cursor:pointer;}
+  .stay-chip.active{background:var(--papa);color:#fff;border-color:var(--papa);}
+  .nextday-toggle{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#8a8378;}
+
+  .cfg-item{
+    display:flex;align-items:center;justify-content:space-between;gap:4px;
+    border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;font-size:12px;margin-bottom:6px;
+  }
+  .cfg-item .x{color:var(--accent);font-weight:bold;cursor:pointer;padding:0 4px;}
+  .cfg-add-row{display:flex;gap:6px;margin-top:4px;margin-bottom:16px;}
+  .cfg-add-row input{flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:16px;}
+  .cfg-add-row button{border:none;background:var(--papa);color:#fff;border-radius:8px;padding:0 14px;font-size:13px;}
+
+  .status{position:fixed;top:8px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;font-size:11px;padding:4px 10px;border-radius:12px;opacity:0;transition:.3s;pointer-events:none;z-index:99;}
+  .status.show{opacity:.85;}
+
+  .gate-btn{width:100%;padding:14px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:15px;cursor:pointer;margin-top:8px;}
+  .gate-btn.secondary{background:var(--papa);}
+  .gate-btn.outline{background:#fff;color:var(--ink);border:1px solid var(--line);}
+  .gate-input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;margin-top:8px;text-align:center;letter-spacing:.1em;}
+</style>
+</head>
+<body>
+
+<!-- ルーム選択ゲート -->
+<div class="sheet-overlay open center" id="roomGate">
+  <div class="sheet rounded" style="max-width:360px;">
+    <h2 style="border-bottom:none;">鉄勤 へようこそ</h2>
+    <div class="mini">乗務員本人とその家族専用のシフトカレンダーです。</div>
+
+    <button class="gate-btn" onclick="createRoom()">新しく作る</button>
+
+    <div class="section-label">既存の合言葉で参加</div>
+    <input id="joinCodeInput" class="gate-input" placeholder="例: TK4829">
+    <button class="gate-btn secondary" onclick="joinRoom()">参加する</button>
+
+    <div class="section-label">それ以外</div>
+    <button class="gate-btn outline" onclick="useLegacyRoom()">以前からのデータを引き継ぐ</button>
+  </div>
+</div>
+
+<div id="appRoot" style="display:none;">
+
+<header>
+  <h1 id="monthLabel">2026年8月</h1>
+  <div class="nav">
+    <button onclick="changeMonth(-1)">‹</button>
+    <button onclick="changeMonth(1)">›</button>
+    <button class="cfg-btn" onclick="openConfigScreen()">カテゴリ設定</button>
+    <button class="shiftcheck-btn" onclick="openMaster()">シフト確認</button>
+  </div>
+</header>
+<div class="roomcode-row" onclick="showRoomCode()">合言葉を表示</div>
+
+<div class="weekdays">
+  <div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div>
+</div>
+<div class="grid" id="grid"></div>
+
+<div style="display:flex;gap:8px;padding:10px 6px 20px;">
+  <button onclick="openNoteView('mama')" style="flex:1;padding:12px;border:none;border-radius:10px;background:var(--mama);color:#fff;font-size:14px;">ママ</button>
+  <button onclick="openNoteView('papa')" style="flex:1;padding:12px;border:none;border-radius:10px;background:var(--papa);color:#fff;font-size:14px;">パパ</button>
+</div>
+
+<!-- ママ/パパ メモ一覧シート(縦スクロール) -->
+<div class="sheet-overlay" id="noteOverlay">
+  <div class="sheet" style="max-height:90vh;max-height:90dvh;">
+    <h2 id="noteTitle">メモ</h2>
+    <div id="noteList"></div>
+    <button class="close-btn" onclick="closeNoteView()">閉じる</button>
+  </div>
+</div>
+
+<!-- 日付編集シート -->
+<div class="sheet-overlay" id="daySheet">
+  <div class="sheet">
+    <h2 id="sheetDate"></h2>
+
+    <div class="section-label">パパ・勤務</div>
+    <div class="btnrow" id="papaWorkBtns"></div>
+
+    <div class="section-label">パパ・休み</div>
+    <div class="btnrow" id="papaRestBtns"></div>
+
+    <div id="rinkoBox" style="display:none;" class="rinko-inputs">
+      <select id="rinkoType"><option value="泊まり">泊まり</option><option value="日勤">日勤</option></select>
+      <input type="time" id="rinkoStart" placeholder="開始">
+      <input type="time" id="rinkoEnd" placeholder="終了">
+    </div>
+    <div class="mini" id="papaTimeInfo"></div>
+
+    <div id="papaDetailBox" class="detail-box" style="display:none;">
+      <div class="detail-title">勤務詳細(シフト設定より自動反映)</div>
+      <div class="mini" id="papaDetailText" style="white-space:pre-line;"></div>
+    </div>
+
+    <div class="section-label">ママ</div>
+    <div class="toggle-row">
+      <span>勤務あり</span>
+      <div class="switch" id="mamaSwitch" onclick="toggleMama()"><div class="knob"></div></div>
+    </div>
+
+    <div class="section-label">行事・習い事</div>
+    <div class="kidgrid" id="kidGrid"></div>
+
+    <button class="close-btn" onclick="closeDaySheet()">閉じる</button>
+  </div>
+</div>
+
+<!-- シフトマスタ編集シート -->
+<div class="sheet-overlay" id="masterSheet">
+  <div class="sheet">
+    <h2>シフト確認・時間編集</h2>
+    <div class="mini">ここで設定した内容(時間・列車・泊まり地)は、そのシフトを選んだ全ての日に自動で反映されます。</div>
+    <div id="masterList"></div>
+    <button class="close-btn" onclick="saveMasterAndClose()">保存して閉じる</button>
+  </div>
+</div>
+
+<!-- カテゴリ設定シート -->
+<div class="sheet-overlay" id="configSheet">
+  <div class="sheet">
+    <h2>カテゴリ設定</h2>
+    <div class="mini">行路コード・休みの種類・行事/習い事・泊まり地を自由に追加/削除できます。「日勤」「臨行路」は仕組み上固定です。</div>
+
+    <div class="section-label">行路・勤務コード</div>
+    <div id="cfgWorkList"></div>
+    <div class="cfg-add-row">
+      <input id="cfgWorkNew" placeholder="例: 616">
+      <button onclick="addConfigItem('workShifts','cfgWorkNew')">追加</button>
+    </div>
+
+    <div class="section-label">休みの種類</div>
+    <div id="cfgRestList"></div>
+    <div class="cfg-add-row">
+      <input id="cfgRestNew" placeholder="例: 代休">
+      <button onclick="addConfigItem('restShifts','cfgRestNew')">追加</button>
+    </div>
+
+    <div class="section-label">行事・習い事</div>
+    <div id="cfgKidsList"></div>
+    <div class="cfg-add-row">
+      <input id="cfgKidsNew" placeholder="例: 通院">
+      <button onclick="addConfigItem('kids','cfgKidsNew')">追加</button>
+    </div>
+
+    <div class="section-label">泊まり地</div>
+    <div id="cfgStaysList"></div>
+    <div class="cfg-add-row">
+      <input id="cfgStaysNew" placeholder="例: 熊本">
+      <button onclick="addConfigItem('stays','cfgStaysNew')">追加</button>
+    </div>
+
+    <button class="close-btn" onclick="saveConfigAndClose()">保存して閉じる</button>
+  </div>
+</div>
+
+<div class="status" id="statusMsg"></div>
+
+</div><!-- /appRoot -->
+
+<script>
+/* ===== Firebase設定 ===== */
+const firebaseConfig = {
+  apiKey: "AIzaSyBftPJ5cRZeCMocl0uUjvUDSY3-2KUXnhU",
+  authDomain: "work-d348a.firebaseapp.com",
+  projectId: "work-d348a",
+  storageBucket: "work-d348a.firebasestorage.app",
+  messagingSenderId: "12856137333",
+  appId: "1:12856137333:web:f78ccbca02e081dc0b0a3c",
+  measurementId: "G-T06QFJ2DKX"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+const ROOM_STORAGE_KEY = "kinmu2_room";
+const LEGACY_ROOM = "FAMILY_LEGACY"; // 以前からのデータ(ルーム分割前)を指す特別コード
+let roomCode = null;
+
+/* ===== カテゴリ設定(カスタマイズ可能。デフォルト値) ===== */
+let appConfig = {
+  workShifts: [...Array(15)].map((_,i)=>String(601+i)).concat(["671","672","G予備"]),
+  restShifts: ["特休","公休","年休"],
+  kids: ["旅行","帰省","マリンバ","サッカー","ママ友会","図書館"],
+  stays: ["博総","博多","小倉","新下関","広島","広運","岡山","岡運","姫路","西明石","新大阪","大一両"]
+};
+// 「日勤」「臨行路」は仕組み上の特殊カテゴリとして常に末尾に付与
+function getAllWorkShifts(){ return appConfig.workShifts.concat(["日勤","臨行路"]); }
+
+let shiftMaster = {}; // { "601": {start, end, trains:[], stay:"", noNextDay:false} , ... }
+function ensureShiftMasterDefaults(){
+  appConfig.workShifts.forEach(s=>{
+    if(!shiftMaster[s]) shiftMaster[s] = {start:"08:57", end:"10:09", trains:[], stay:"", noNextDay:false};
+  });
+  if(!shiftMaster["日勤"]) shiftMaster["日勤"] = {start:"08:30", end:"17:15"};
+}
+ensureShiftMasterDefaults();
+
+let current = new Date();
+current.setDate(1);
+let monthData = {};
+let prevMonthData = {};
+let selectedDateKey = null;
+
+function monthKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+function dateKey(y,m,day){ return `${y}-${String(m+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`; }
+
+/* ===== ルーム(合言葉)まわり ===== */
+function roomRef(){
+  if(roomCode === LEGACY_ROOM) return db.collection("family_calendar");
+  return db.collection("rooms").doc(roomCode).collection("family_calendar");
+}
+
+function generateRoomCode(){
+  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const digits = "0123456789";
+  let code = "TK";
+  for(let i=0;i<2;i++) code += letters[Math.floor(Math.random()*letters.length)];
+  for(let i=0;i<4;i++) code += digits[Math.floor(Math.random()*digits.length)];
+  return code;
+}
+
+function createRoom(){
+  const code = generateRoomCode();
+  localStorage.setItem(ROOM_STORAGE_KEY, code);
+  roomCode = code;
+  document.getElementById("roomGate").classList.remove("open");
+  alert(`新しい合言葉: ${code}\nこれを家族に共有してください。このコードは端末に保存されるので、次回から自動で開きます。`);
+  startApp();
+}
+
+function joinRoom(){
+  const v = document.getElementById("joinCodeInput").value.trim().toUpperCase();
+  if(!v){ alert("合言葉を入力してください"); return; }
+  localStorage.setItem(ROOM_STORAGE_KEY, v);
+  roomCode = v;
+  document.getElementById("roomGate").classList.remove("open");
+  startApp();
+}
+
+function useLegacyRoom(){
+  localStorage.setItem(ROOM_STORAGE_KEY, LEGACY_ROOM);
+  roomCode = LEGACY_ROOM;
+  document.getElementById("roomGate").classList.remove("open");
+  startApp();
+}
+
+function showRoomCode(){
+  if(roomCode === LEGACY_ROOM){
+    alert("これは「以前からのデータ」を直接使うモードです。専用の合言葉はありません。");
+    return;
+  }
+  prompt("このカレンダーの合言葉。家族に共有してください:", roomCode);
+}
+
+/* ===== 背景スクロール固定 ===== */
+let _scrollLocked = false;
+function lockBodyScroll(){
+  if(_scrollLocked) return;
+  _scrollLocked = true;
+  document.documentElement.style.overflow = "hidden";
+  document.body.style.overflow = "hidden";
+}
+function unlockBodyScroll(){
+  if(!_scrollLocked) return;
+  _scrollLocked = false;
+  document.documentElement.style.overflow = "";
+  document.body.style.overflow = "";
+}
+
+/* ===== 入力後のズーム残り対策 ===== */
+function resetViewportZoom(){
+  const meta = document.querySelector('meta[name="viewport"]');
+  if(!meta) return;
+  const original = meta.getAttribute('content');
+  meta.setAttribute('content', original + ',shrink-to-fit=no');
+  setTimeout(()=>{ meta.setAttribute('content', original); }, 50);
+}
+document.addEventListener('focusout', function(e){
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')){
+    resetViewportZoom();
+  }
+}, true);
+
+function showStatus(msg){
+  const el = document.getElementById("statusMsg");
+  el.textContent = msg; el.classList.add("show");
+  setTimeout(()=>el.classList.remove("show"), 1500);
+}
+
+function showFatalError(msg){
+  var b = document.getElementById('errBox');
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'errBox';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#c0392b;color:#fff;font-size:12px;line-height:1.5;padding:10px 12px;max-height:60vh;overflow-y:auto;font-family:monospace;white-space:pre-wrap;word-break:break-all;';
+    document.documentElement.appendChild(b);
+  }
+  var line = document.createElement('div');
+  line.style.marginBottom = '6px';
+  line.style.borderBottom = '1px solid rgba(255,255,255,.3)';
+  line.style.paddingBottom = '6px';
+  line.textContent = '[Firestoreエラー] ' + msg;
+  b.appendChild(line);
+}
+
+/* ===== Firestore 読み書き ===== */
+function loadConfigAndMaster(){
+  roomRef().doc("_config").get().then(doc=>{
+    if(doc.exists){
+      const d = doc.data();
+      appConfig.workShifts = d.workShifts || appConfig.workShifts;
+      appConfig.restShifts = d.restShifts || appConfig.restShifts;
+      appConfig.kids = d.kids || appConfig.kids;
+      appConfig.stays = d.stays || appConfig.stays;
+    }
+    ensureShiftMasterDefaults();
+  }).catch(err=>{ showFatalError("カテゴリ設定取得失敗: " + err.message); });
+
+  roomRef().doc("_shift_master").get().then(doc=>{
+    if(doc.exists) shiftMaster = Object.assign(shiftMaster, doc.data());
+    ensureShiftMasterDefaults();
+    renderGrid();
+  }).catch(err=>{ showFatalError("シフトマスタ取得失敗: " + err.message); });
+}
+
+function loadMonth(){
+  const key = monthKey(current);
+  const prev = new Date(current.getFullYear(), current.getMonth()-1, 1);
+  const prevKey = monthKey(prev);
+
+  roomRef().doc(prevKey).get().then(doc=>{
+    prevMonthData = doc.exists ? (doc.data().days || {}) : {};
+    renderGrid();
+  }).catch(err=>{ showFatalError("前月データ取得失敗: " + err.message); });
+
+  roomRef().doc(key).onSnapshot(doc=>{
+    monthData = doc.exists ? (doc.data().days || {}) : {};
+    renderGrid();
+  }, err=>{ showFatalError("当月データ取得失敗: " + err.message); });
+}
+
+function saveDay(key, data){
+  monthData[key] = data;
+  roomRef().doc(monthKey(current)).set({days: monthData}, {merge:true})
+    .then(()=>showStatus("保存しました"))
+    .catch(()=>showStatus("保存に失敗しました"));
+}
+
+function saveMaster(){
+  roomRef().doc("_shift_master").set(shiftMaster)
+    .then(()=>showStatus("シフト時間を保存しました"));
+}
+
+function saveConfig(){
+  roomRef().doc("_config").set(appConfig)
+    .then(()=>showStatus("カテゴリ設定を保存しました"));
+}
+
+/* ===== カレンダー描画 ===== */
+function changeMonth(diff){
+  current.setMonth(current.getMonth()+diff);
+  loadMonth();
+  updateLabel();
+}
+function updateLabel(){
+  document.getElementById("monthLabel").textContent = `${current.getFullYear()}年${current.getMonth()+1}月`;
+}
+
+function renderGrid(){
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  const y = current.getFullYear(), m = current.getMonth();
+  const firstDay = new Date(y,m,1).getDay();
+  const lastDate = new Date(y,m+1,0).getDate();
+
+  for(let i=0;i<firstDay;i++){
+    const e = document.createElement("div");
+    e.className="cell empty";
+    grid.appendChild(e);
+  }
+
+  for(let d=1; d<=lastDate; d++){
+    const key = dateKey(y,m,d);
+    const info = monthData[key] || {};
+    const cell = document.createElement("div");
+    cell.className="cell";
+    const todayObj = new Date();
+    if(y===todayObj.getFullYear() && m===todayObj.getMonth() && d===todayObj.getDate()){
+      cell.className += " today";
+    }
+    cell.onclick = ()=>openDaySheet(key,d);
+
+    let html = `<div class="datenum">${d}</div>`;
+    if(info.mamaNote || info.papaNote){
+      html += `<div class="notedots">`
+        + (info.mamaNote ? `<span class="dot dot-mama"></span>` : ``)
+        + (info.papaNote ? `<span class="dot dot-papa"></span>` : ``)
+        + `</div>`;
+    }
+
+    if(info.papaType){
+      const isRest = appConfig.restShifts.includes(info.papaType);
+      html += `<span class="tag ${isRest?'rest':'papa'}">${info.papaType}</span>`;
+      if(!isRest){
+        const mst = shiftMaster[info.papaType];
+        if(mst && mst.stay) html += `<span class="tag papa">泊:${mst.stay}</span>`;
+        if(mst && mst.trains && mst.trains.length) html += `<span class="tag papa">${mst.trains.join("・")}</span>`;
+      }
+    }
+    // 翌日「〜」表示チェック(月初は前月末データを参照)
+    let prevInfo;
+    if(d===1){
+      const prevMonth = new Date(y, m-1, 1);
+      const prevLastDate = new Date(y, m, 0).getDate();
+      const prevKey = dateKey(prevMonth.getFullYear(), prevMonth.getMonth(), prevLastDate);
+      prevInfo = prevMonthData[prevKey];
+    } else {
+      const prevKey = dateKey(y,m,d-1);
+      prevInfo = monthData[prevKey];
+    }
+    if(prevInfo && prevInfo.papaType){
+      const prevMst = shiftMaster[prevInfo.papaType];
+      const showNext = !(prevMst && prevMst.noNextDay) &&
+        !appConfig.restShifts.includes(prevInfo.papaType) &&
+        !(prevInfo.papaType==="臨行路" && prevInfo.rinkoType==="日勤");
+      if(showNext && !info.papaType){
+        html += `<span class="tag papa">〜</span>`;
+      }
+    }
+    if(info.mama){
+      html += `<span class="tag mama">ママ</span>`;
+    }
+    if(info.kids && info.kids.length){
+      html += `<div class="kidwrap">`+ info.kids.map(k=>`<span class="tag kid">${k}</span>`).join("") + `</div>`;
+    }
+    cell.innerHTML = html;
+    grid.appendChild(cell);
+  }
+}
+
+/* ===== 日付編集シート ===== */
+function openDaySheet(key, day){
+  selectedDateKey = key;
+  document.getElementById("sheetDate").textContent = `${current.getMonth()+1}月${day}日`;
+  const info = monthData[key] || {};
+
+  const workBox = document.getElementById("papaWorkBtns");
+  workBox.innerHTML = getAllWorkShifts().map(s=>
+    `<div class="chip ${info.papaType===s?'active':''}" onclick="selectPapaType('${s}')">${s}</div>`
+  ).join("");
+
+  const restBox = document.getElementById("papaRestBtns");
+  restBox.innerHTML = appConfig.restShifts.map(s=>
+    `<div class="chip rest-chip ${info.papaType===s?'active':''}" onclick="selectPapaType('${s}')">${s}</div>`
+  ).join("") + `<div class="chip ${!info.papaType?'active':''}" onclick="selectPapaType(null)">なし</div>`;
+
+  const rinkoBox = document.getElementById("rinkoBox");
+  if(info.papaType==="臨行路"){
+    rinkoBox.style.display="flex";
+    document.getElementById("rinkoType").value = info.rinkoType || "泊まり";
+    document.getElementById("rinkoStart").value = info.rinkoStart || "";
+    document.getElementById("rinkoEnd").value = info.rinkoEnd || "";
+  } else {
+    rinkoBox.style.display="none";
+  }
+  updateTimeInfo(info.papaType);
+  renderPapaDetails(info);
+
+  const sw = document.getElementById("mamaSwitch");
+  sw.classList.toggle("on", !!info.mama);
+
+  const kidGrid = document.getElementById("kidGrid");
+  kidGrid.innerHTML = appConfig.kids.map(k=>
+    `<div class="kidchip ${info.kids&&info.kids.includes(k)?'active':''}" onclick="toggleKid('${k}')">${k}</div>`
+  ).join("");
+
+  document.getElementById("daySheet").classList.add("open");
+  lockBodyScroll();
+}
+
+function renderPapaDetails(info){
+  const box = document.getElementById("papaDetailBox");
+  const active = !!info.papaType && !appConfig.restShifts.includes(info.papaType) && info.papaType !== "臨行路" && info.papaType !== "日勤";
+  box.style.display = active ? "block" : "none";
+  if(!active) return;
+
+  const m = shiftMaster[info.papaType] || {};
+  const parts = [];
+  if(m.trains && m.trains.length) parts.push(`列車: ${m.trains.join("・")}`);
+  parts.push(`泊まり地: ${m.stay || "未設定"}`);
+  document.getElementById("papaDetailText").textContent = parts.join("\n");
+}
+
+function updateTimeInfo(type){
+  const el = document.getElementById("papaTimeInfo");
+  if(type && shiftMaster[type]){
+    el.textContent = `時間: ${shiftMaster[type].start} 〜 翌 ${shiftMaster[type].end}`;
+  } else {
+    el.textContent = "";
+  }
+}
+
+function currentDayData(){
+  return monthData[selectedDateKey] || {};
+}
+
+function selectPapaType(type){
+  const info = currentDayData();
+  info.papaType = type;
+  if(type!=="臨行路"){ delete info.rinkoType; delete info.rinkoStart; delete info.rinkoEnd; }
+  saveDay(selectedDateKey, info);
+  openDaySheet(selectedDateKey, parseInt(selectedDateKey.split("-")[2],10));
+}
+
+document.getElementById("rinkoType").addEventListener("change", e=>{
+  const info = currentDayData(); info.rinkoType = e.target.value; saveDay(selectedDateKey, info);
+});
+document.getElementById("rinkoStart").addEventListener("change", e=>{
+  const info = currentDayData(); info.rinkoStart = e.target.value; saveDay(selectedDateKey, info);
+});
+document.getElementById("rinkoEnd").addEventListener("change", e=>{
+  const info = currentDayData(); info.rinkoEnd = e.target.value; saveDay(selectedDateKey, info);
+});
+
+function toggleMama(){
+  const info = currentDayData();
+  info.mama = !info.mama;
+  document.getElementById("mamaSwitch").classList.toggle("on", info.mama);
+  saveDay(selectedDateKey, info);
+}
+
+function toggleKid(k){
+  const info = currentDayData();
+  info.kids = info.kids || [];
+  if(info.kids.includes(k)) info.kids = info.kids.filter(x=>x!==k);
+  else info.kids.push(k);
+  saveDay(selectedDateKey, info);
+  openDaySheet(selectedDateKey, parseInt(selectedDateKey.split("-")[2],10));
+}
+
+function closeDaySheet(){
+  document.getElementById("daySheet").classList.remove("open");
+  unlockBodyScroll();
+}
+
+/* ===== 暗証番号チェック(共通) ===== */
+function checkPin(){
+  const pin = prompt("暗証番号を入力してください(パパのみ操作可)");
+  if(pin === null) return false;
+  if(pin !== "1219"){
+    alert("暗証番号が違います");
+    return false;
+  }
+  return true;
+}
+
+/* ===== シフトマスタ編集 ===== */
+function openMaster(){
+  if(!checkPin()) return;
+  const codes = appConfig.workShifts.concat(["日勤"]);
+  const list = document.getElementById("masterList");
+  list.innerHTML = codes.map(s=>{
+    const t = shiftMaster[s] || {start:"",end:"",trains:[],stay:"",noNextDay:false};
+    const hasExtra = s !== "日勤";
+    const trainsHtml = !hasExtra ? "" : `
+      <div class="detail-title" style="margin-top:10px;">担当列車（最大10本）</div>
+      <div class="train-grid">
+        ${Array.from({length:10}, (_,i)=>{
+          const v = (t.trains && t.trains[i]) || "";
+          return `<input type="text" inputmode="numeric" maxlength="12" data-code="${s}" data-train-index="${i}" placeholder="${i+1}. 列車番号" value="${v}">`;
+        }).join("")}
+      </div>
+      <div class="mini">数字だけ入力すると自動で「A」を付けて保存します。例：7139 → 7139A</div>
+      <div class="detail-title" style="margin-top:10px;">泊まり地</div>
+      <div class="stay-grid" data-stay-group="${s}">
+        ${appConfig.stays.map(x=>`<div class="stay-chip ${t.stay===x?'active':''}" data-stay="${x}">${x}</div>`).join("")}
+        <div class="stay-chip ${!t.stay?'active':''}" data-stay="">なし</div>
+      </div>
+      <label class="nextday-toggle">
+        <input type="checkbox" id="m_${s}_nn" ${t.noNextDay?'checked':''}>
+        翌日に「〜」を表示しない(日勤扱いの勤務)
+      </label>`;
+    return `<div class="detail-box">
+      <div class="detail-title" style="font-size:14px;">${s}</div>
+      <div class="time-row">
+        <input type="time" id="m_${s}_s" value="${t.start||''}">
+        <span>〜翌</span>
+        <input type="time" id="m_${s}_e" value="${t.end||''}">
+      </div>
+      ${trainsHtml}
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll(".stay-chip").forEach(chip=>{
+    chip.addEventListener("click", ()=>{
+      const group = chip.closest(".stay-grid");
+      group.querySelectorAll(".stay-chip").forEach(c=>c.classList.remove("active"));
+      chip.classList.add("active");
+    });
+  });
+
+  document.getElementById("masterSheet").classList.add("open");
+  lockBodyScroll();
+}
+function saveMasterAndClose(){
+  const codes = appConfig.workShifts.concat(["日勤"]);
+  codes.forEach(s=>{
+    const entry = {
+      start: document.getElementById(`m_${s}_s`).value,
+      end: document.getElementById(`m_${s}_e`).value
+    };
+    if(s !== "日勤"){
+      const trainInputs = document.querySelectorAll(`.train-grid input[data-code="${s}"]`);
+      const trains = Array.from(trainInputs).map(el=>{
+        const raw = el.value.trim().replace(/A$/i, "");
+        return raw ? raw + "A" : "";
+      }).filter(Boolean).slice(0,10);
+      const activeChip = document.querySelector(`.stay-grid[data-stay-group="${s}"] .stay-chip.active`);
+      entry.trains = trains;
+      entry.stay = activeChip ? activeChip.getAttribute("data-stay") : "";
+      const nnEl = document.getElementById(`m_${s}_nn`);
+      entry.noNextDay = nnEl ? nnEl.checked : false;
+    }
+    shiftMaster[s] = entry;
+  });
+  saveMaster();
+  document.getElementById("masterSheet").classList.remove("open");
+  unlockBodyScroll();
+}
+
+/* ===== カテゴリ設定(行路・休み・行事/習い事・泊まり地) ===== */
+function openConfigScreen(){
+  if(!checkPin()) return;
+  renderConfigLists();
+  document.getElementById("configSheet").classList.add("open");
+  lockBodyScroll();
+}
+function renderConfigLists(){
+  renderConfigList("workShifts","cfgWorkList");
+  renderConfigList("restShifts","cfgRestList");
+  renderConfigList("kids","cfgKidsList");
+  renderConfigList("stays","cfgStaysList");
+}
+function renderConfigList(field, elId){
+  const el = document.getElementById(elId);
+  el.innerHTML = appConfig[field].map(item=>
+    `<div class="cfg-item"><span>${item}</span><span class="x" onclick="removeConfigItem('${field}','${item}')">×</span></div>`
+  ).join("") || `<div class="mini">まだ項目がありません</div>`;
+}
+function addConfigItem(field, inputId){
+  const input = document.getElementById(inputId);
+  const v = input.value.trim();
+  if(!v) return;
+  if(!appConfig[field].includes(v)) appConfig[field].push(v);
+  input.value = "";
+  if(field === "workShifts") ensureShiftMasterDefaults();
+  renderConfigLists();
+}
+function removeConfigItem(field, value){
+  appConfig[field] = appConfig[field].filter(x=>x!==value);
+  renderConfigLists();
+}
+function saveConfigAndClose(){
+  saveConfig();
+  document.getElementById("configSheet").classList.remove("open");
+  unlockBodyScroll();
+}
+
+/* ===== ママ/パパ メモ(縦スクロール自由記入) ===== */
+function openNoteView(person){
+  const label = person === "mama" ? "ママ" : "パパ";
+  document.getElementById("noteTitle").textContent = `${label}のメモ ・ ${current.getFullYear()}年${current.getMonth()+1}月`;
+
+  const y = current.getFullYear(), m = current.getMonth();
+  const lastDate = new Date(y,m+1,0).getDate();
+  const weekLabels = ["日","月","火","水","木","金","土"];
+  const noteField = person + "Note";
+
+  const list = document.getElementById("noteList");
+  list.innerHTML = "";
+  for(let d=1; d<=lastDate; d++){
+    const key = dateKey(y,m,d);
+    const info = monthData[key] || {};
+    const wd = new Date(y,m,d).getDay();
+    const row = document.createElement("div");
+    row.style.cssText = "border-bottom:1px solid var(--line);padding:8px 2px;";
+    const dateColor = wd===0 ? "var(--mama)" : (wd===6 ? "var(--papa)" : "var(--ink)");
+    row.innerHTML = `<div style="font-size:11px;color:${dateColor};margin-bottom:4px;">${m+1}月${d}日(${weekLabels[wd]})</div>
+      <textarea data-key="${key}" placeholder="メモを入力" style="width:100%;min-height:40px;border:1px solid var(--line);border-radius:8px;padding:6px;font-size:16px;font-family:inherit;resize:vertical;">${info[noteField] || ""}</textarea>`;
+    list.appendChild(row);
+  }
+
+  list.querySelectorAll("textarea").forEach(ta=>{
+    ta.addEventListener("blur", e=>{
+      const k = e.target.getAttribute("data-key");
+      const info = monthData[k] || {};
+      info[noteField] = e.target.value;
+      saveDay(k, info);
+    });
+  });
+
+  document.getElementById("noteOverlay").classList.add("open");
+  lockBodyScroll();
+  const sheetEl = document.querySelector("#noteOverlay .sheet");
+  if(sheetEl) sheetEl.scrollTop = 0;
+}
+
+function closeNoteView(){
+  document.getElementById("noteOverlay").classList.remove("open");
+  unlockBodyScroll();
+}
+
+/* ===== 画面復帰時に再描画 ===== */
+document.addEventListener("visibilitychange", function(){
+  if(document.visibilityState === "visible" && roomCode){
+    renderGrid();
+  }
+});
+window.addEventListener("pageshow", function(){
+  if(roomCode) renderGrid();
+});
+
+/* ===== 起動処理 ===== */
+function startApp(){
+  document.getElementById("appRoot").style.display = "";
+  updateLabel();
+  loadConfigAndMaster();
+  loadMonth();
+}
+
+(function init(){
+  const saved = localStorage.getItem(ROOM_STORAGE_KEY);
+  if(saved){
+    roomCode = saved;
+    document.getElementById("roomGate").classList.remove("open");
+    startApp();
+  }
+  // 保存がなければゲート画面(デフォルトでopen済み)がそのまま表示される
+})();
+</script>
+</body>
+</html>
