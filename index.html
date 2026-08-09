@@ -244,9 +244,12 @@
 <!-- 相方/本人 メモ一覧シート(縦スクロール) -->
 <div class="sheet-overlay" id="noteOverlay">
   <div class="sheet" style="max-height:90vh;max-height:90dvh;">
-    <h2 id="noteTitle">メモ</h2>
+    <h2 style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <span id="noteTitle">メモ</span>
+      <button onclick="closeNoteView()" style="flex-shrink:0;border:none;background:var(--accent);color:#fff;font-size:12px;padding:7px 12px;border-radius:8px;">保存して閉じる</button>
+    </h2>
     <div id="noteList"></div>
-    <button class="close-btn" onclick="closeNoteView()">閉じる</button>
+    <button class="close-btn" onclick="closeNoteView()">保存して閉じる</button>
   </div>
 </div>
 
@@ -903,6 +906,9 @@ function openNoteView(person){
 }
 
 function closeNoteView(){
+  if(document.activeElement && document.activeElement.tagName === "TEXTAREA"){
+    document.activeElement.blur(); // フォーカス中のメモを確実に保存させる
+  }
   document.getElementById("noteOverlay").classList.remove("open");
   unlockBodyScroll();
 }
