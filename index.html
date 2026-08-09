@@ -237,11 +237,11 @@
 <div class="grid" id="grid"></div>
 
 <div style="display:flex;gap:8px;padding:10px 6px 20px;">
-  <button onclick="openNoteView('mama')" style="flex:1;padding:12px;border:none;border-radius:10px;background:var(--mama);color:#fff;font-size:14px;">ママ</button>
-  <button onclick="openNoteView('papa')" style="flex:1;padding:12px;border:none;border-radius:10px;background:var(--papa);color:#fff;font-size:14px;">パパ</button>
+  <button onclick="openNoteView('mama')" style="flex:1;padding:12px;border:none;border-radius:10px;background:var(--mama);color:#fff;font-size:14px;">相方</button>
+  <button onclick="openNoteView('papa')" style="flex:1;padding:12px;border:none;border-radius:10px;background:var(--papa);color:#fff;font-size:14px;">本人</button>
 </div>
 
-<!-- ママ/パパ メモ一覧シート(縦スクロール) -->
+<!-- 相方/本人 メモ一覧シート(縦スクロール) -->
 <div class="sheet-overlay" id="noteOverlay">
   <div class="sheet" style="max-height:90vh;max-height:90dvh;">
     <h2 id="noteTitle">メモ</h2>
@@ -255,10 +255,10 @@
   <div class="sheet">
     <h2 id="sheetDate"></h2>
 
-    <div class="section-label">パパ・勤務</div>
+    <div class="section-label">本人・勤務</div>
     <div class="btnrow" id="papaWorkBtns"></div>
 
-    <div class="section-label">パパ・休み</div>
+    <div class="section-label">本人・休み</div>
     <div class="btnrow" id="papaRestBtns"></div>
 
     <div id="rinkoBox" style="display:none;" class="rinko-inputs">
@@ -273,7 +273,7 @@
       <div class="mini" id="papaDetailText" style="white-space:pre-line;"></div>
     </div>
 
-    <div class="section-label">ママ</div>
+    <div class="section-label">相方</div>
     <div class="toggle-row">
       <span>勤務あり</span>
       <div class="switch" id="mamaSwitch" onclick="toggleMama()"><div class="knob"></div></div>
@@ -289,7 +289,10 @@
 <!-- シフトマスタ編集シート -->
 <div class="sheet-overlay" id="masterSheet">
   <div class="sheet">
-    <h2>シフト確認・時間編集</h2>
+    <h2 style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <span>シフト確認・時間編集</span>
+      <button onclick="saveMasterAndClose()" style="flex-shrink:0;border:none;background:var(--accent);color:#fff;font-size:12px;padding:7px 12px;border-radius:8px;">保存して閉じる</button>
+    </h2>
     <div class="mini">ここで設定した内容(時間・列車・泊まり地)は、そのシフトを選んだ全ての日に自動で反映されます。</div>
     <div id="masterList"></div>
     <button class="close-btn" onclick="saveMasterAndClose()">保存して閉じる</button>
@@ -609,7 +612,7 @@ function renderGrid(){
       }
     }
     if(info.mama){
-      html += `<span class="tag mama">ママ</span>`;
+      html += `<span class="tag mama">相方</span>`;
     }
     if(info.kids && info.kids.length){
       html += `<div class="kidwrap">`+ info.kids.map(k=>`<span class="tag kid">${k}</span>`).join("") + `</div>`;
@@ -726,7 +729,7 @@ function closeDaySheet(){
 
 /* ===== 暗証番号チェック(共通) ===== */
 function checkPin(){
-  const pin = prompt("暗証番号を入力してください(パパのみ操作可)");
+  const pin = prompt("暗証番号を入力してください(本人のみ操作可)");
   if(pin === null) return false;
   if(pin !== "1219"){
     alert("暗証番号が違います");
@@ -860,9 +863,9 @@ function saveConfigAndClose(){
   unlockBodyScroll();
 }
 
-/* ===== ママ/パパ メモ(縦スクロール自由記入) ===== */
+/* ===== 相方/本人 メモ(縦スクロール自由記入) ===== */
 function openNoteView(person){
-  const label = person === "mama" ? "ママ" : "パパ";
+  const label = person === "mama" ? "相方" : "本人";
   document.getElementById("noteTitle").textContent = `${label}のメモ ・ ${current.getFullYear()}年${current.getMonth()+1}月`;
 
   const y = current.getFullYear(), m = current.getMonth();
