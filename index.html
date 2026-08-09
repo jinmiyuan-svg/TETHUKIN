@@ -588,11 +588,6 @@ function renderGrid(){
     if(info.papaType){
       const isRest = appConfig.restShifts.includes(info.papaType);
       html += `<span class="tag ${isRest?'rest':'papa'}">${info.papaType}</span>`;
-      if(!isRest){
-        const mst = shiftMaster[info.papaType];
-        if(mst && mst.stay) html += `<span class="tag papa">泊:${mst.stay}</span>`;
-        if(mst && mst.trains && mst.trains.length) html += `<span class="tag papa">${mst.trains.join("・")}</span>`;
-      }
     }
     // 翌日「〜」表示チェック(月初は前月末データを参照)
     let prevInfo;
